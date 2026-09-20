@@ -399,7 +399,8 @@ class Game:
         self.board_y = INFO_H + MARGIN
 
         self.start_btn = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 60, 220, 64)
-        self.restart_btn = pygame.Rect(WIDTH - 170, 35, 140, 50)
+        # 重新开始按钮放在右上角
+        self.restart_btn = pygame.Rect(WIDTH - 150, 15, 135, 48)
         self.next_btn = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 80, 220, 64)
         self.retry_btn = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 80, 220, 64)
         self.restart_all_btn = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 80, 220, 64)
@@ -499,7 +500,6 @@ class Game:
 
         if not self.is_blocked(r, c, direction):
             self.grid[r][c] = 0
-            # ★★★ 修复：创建动画时就带上 draw_x / draw_y ★★★
             self.animations.append({
                 "r": r, "c": c, "dir": direction,
                 "progress": 0.0, "speed": 3.2, "cx": cx, "cy": cy,
@@ -551,7 +551,6 @@ class Game:
             anim["progress"] += anim["speed"] * dt
             if random.random() < 0.6:
                 col = SEASONS[self.season]["arrow"][anim["dir"]][0]
-                # ★★★ 修复：用 .get() 做保护，即使没有 draw_x 也不会崩 ★★★
                 dx = anim.get("draw_x", anim["cx"])
                 dy = anim.get("draw_y", anim["cy"])
                 self.particles.append(Particle(
@@ -703,6 +702,54 @@ class Game:
                 pygame.draw.line(surface, (230, 240, 255), (x, y), (int(x2), int(y2)), 2)
             pygame.draw.circle(surface, (255, 255, 255), (int(x), int(y)), int(r * 0.25))
 
+    # ============ 新增：手绘季节图标（替代 emoji，避免显示成方框） ============
+    def draw_season_icon(self, x, y, season, r):
+        """在 (x, y) 处绘制一个半径为 r 的季节小图标"""
+        if season == "spring":
+            # 粉樱花
+            for i in range(5):
+                ang = i * (math.tau / 5) - math.pi / 2
+                px = x + math.cos(ang) * r * 0.75
+                py = y + math.sin(ang) * r * 0.75
+                pygame.draw.circle(self.screen, (255, 150, 185), (int(px), int(py)), int(r * 0.55))
+            pygame.draw.circle(self.screen, (255, 220, 80), (int(x), int(y)), int(r * 0.32))
+        elif season == "summer":
+            # 太阳
+            pygame.draw.circle(self.screen, (255, 200, 60), (int(x), int(y)), int(r * 0.7))
+            for i in range(8):
+                ang = i * (math.tau / 8)
+                x1 = x + math.cos(ang) * r * 0.85
+                y1 = y + math.sin(ang) * r * 0.85
+                x2 = x + math.cos(ang) * r * 1.25
+                y2 = y + math.sin(ang) * r * 1.25
+                pygame.draw.line(self.screen, (255, 170, 40), (x1, y1), (x2, y2), 2)
+        elif season == "autumn":
+            # 枫叶：五角星形
+            pts = []
+            for i in range(10):
+                ang = i * (math.tau / 10) - math.pi / 2
+                rr = r * (1.15 if i % 2 == 0 else 0.5)
+                pts.append((x + math.cos(ang) * rr, y + math.sin(ang) * rr))
+            pygame.draw.polygon(self.screen, (215, 85, 30),
+                                [(int(px), int(py)) for px, py in pts])
+            pygame.draw.circle(self.screen, (150, 55, 20), (int(x), int(y)), max(1, int(r * 0.15)))
+        else:
+            # 六角雪花
+            col = (120, 165, 215)
+            for i in range(6):
+                ang = i * (math.tau / 6)
+                ex = x + math.cos(ang) * r
+                ey = y + math.sin(ang) * r
+                pygame.draw.line(self.screen, col, (int(x), int(y)), (int(ex), int(ey)), 2)
+                # 侧枝
+                for side in (-1, 1):
+                    bx = x + math.cos(ang) * r * 0.55 + math.cos(ang + side * 1.2) * r * 0.35
+                    by = y + math.sin(ang) * r * 0.55 + math.sin(ang + side * 1.2) * r * 0.35
+                    mx = x + math.cos(ang) * r * 0.55
+                    my = y + math.sin(ang) * r * 0.55
+                    pygame.draw.line(self.screen, col, (int(mx), int(my)), (int(bx), int(by)), 1)
+            pygame.draw.circle(self.screen, (200, 225, 245), (int(x), int(y)), max(1, int(r * 0.25)))
+
     def draw_button(self, rect, text, base_color, hover=True):
         color = base_color
         if hover and rect.collidepoint(self.mouse_pos):
@@ -744,31 +791,36 @@ class Game:
         self.draw_button(self.start_btn, "开 始 游 戏", GREEN)
 
     def draw_playing(self):
+        # 信息栏背景
         info_surf = pygame.Surface((WIDTH, INFO_H), pygame.SRCALPHA)
         info_surf.fill((255, 255, 255, 150))
         self.screen.blit(info_surf, (0, 0))
 
-        level_text = self.font.render(f"关卡 {self.level_index + 1} / {len(levels)}", True, DARK)
-        self.screen.blit(level_text, (MARGIN, 22))
-
-        season_info = SEASONS[self.season]
-        season_icons = {"spring": "🌸", "summer": "☀", "autumn": "🍁", "winter": "❄"}
-        wt = self.small_font.render(f"{season_icons.get(self.season, '')} {season_info['full']}",
-                                    True, (80, 80, 110))
-        self.screen.blit(wt, (MARGIN, 60))
+        # ---------- 第一行：关卡 | 剩余箭头 | 重新开始按钮 ----------
+        level_text = self.font.render(f"关卡 {self.level_index + 1}/{len(levels)}", True, DARK)
+        self.screen.blit(level_text, (20, 12))
 
         remain = sum(1 for row in self.grid for x in row if x != 0)
-        remain_text = self.font.render(f"剩余箭头  {remain}", True, DARK)
-        self.screen.blit(remain_text, (MARGIN + 200, 22))
-
-        heart_label = self.small_font.render("失误", True, DARK)
-        self.screen.blit(heart_label, (MARGIN + 200, 62))
-        for i in range(self.max_mistakes):
-            filled = i < (self.max_mistakes - self.mistakes)
-            self.draw_heart(MARGIN + 260 + i * 30, 72, 11, filled)
+        remain_text = self.small_font.render(f"剩余箭头：{remain}", True, DARK)
+        self.screen.blit(remain_text, (170, 20))
 
         self.draw_button(self.restart_btn, "重新开始", YELLOW)
 
+        # ---------- 第二行：季节图标+文字 | 失误次数+心形 ----------
+        season_info = SEASONS[self.season]
+        # 手绘季节图标（不用 emoji）
+        self.draw_season_icon(22, 82, self.season, 9)
+        season_text = self.small_font.render(season_info['full'], True, (80, 80, 110))
+        self.screen.blit(season_text, (42, 70))
+
+        # 失误次数
+        mistake_label = self.small_font.render("失误次数", True, DARK)
+        self.screen.blit(mistake_label, (170, 70))
+        for i in range(self.max_mistakes):
+            filled = i < (self.max_mistakes - self.mistakes)
+            self.draw_heart(258 + i * 24, 80, 11, filled)
+
+        # ---------- 棋盘 ----------
         shake_x = shake_y = 0
         if self.shake_timer > 0:
             shake_x = random.uniform(-self.shake_amp, self.shake_amp)
@@ -784,6 +836,7 @@ class Game:
                 pygame.draw.rect(board_surf, (180, 195, 210, 150), rect, 1)
         pygame.draw.rect(board_surf, (120, 140, 160, 200), board_surf.get_rect(), 3, border_radius=12)
 
+        # 静态箭头 + 碰撞晃动
         for r in range(GRID_H):
             for c in range(GRID_W):
                 if self.grid[r][c] != 0:
@@ -801,6 +854,7 @@ class Game:
 
         self.screen.blit(board_surf, (self.board_x + shake_x, self.board_y + shake_y))
 
+        # 飞出动画
         for anim in self.animations:
             r, c, direction = anim["r"], anim["c"], anim["dir"]
             progress = anim["progress"]
@@ -822,6 +876,7 @@ class Game:
             self.draw_arrow(self.screen, cx, cy, direction, color_main, color_light,
                             scale=1.0 + progress * 0.3, season=self.season)
 
+        # 粒子
         for p in self.particles:
             p.draw(self.screen)
 
@@ -859,7 +914,7 @@ class Game:
             self.draw_message("关卡通过！", "点击进入下一关", self.next_btn, "下一关")
         elif self.state == "ALL_CLEAR":
             self.draw_playing()
-            self.draw_message("全部通关！", "四季之旅完成 🎉", self.restart_all_btn, "重新开始")
+            self.draw_message("全部通关！", "四季之旅完成", self.restart_all_btn, "重新开始")
         elif self.state == "GAME_OVER":
             self.draw_playing()
             self.draw_message("挑战失败", "再试一次吧", self.retry_btn, "重试", RED)
